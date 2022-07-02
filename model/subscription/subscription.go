@@ -1,4 +1,4 @@
-package model
+package subscription
 
 type Subscription struct {
 	Plan          string `json:"plan"`

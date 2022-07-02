@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/akshaypatil3096/Bulk-Upload-User-Data/model"
 	"go.uber.org/zap"
 )
 
