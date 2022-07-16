@@ -154,19 +154,59 @@ func writeData(totalInserts, remainingInserts, insertionIndex int, csvFile *os.F
 	fmt.Println("remaining inserts are: ", remainingInserts)
 	fmt.Println("insertion index: ", insertionIndex)
 	fmt.Println("totalInsertedRecords: ", totalInsertedRecords)
+	requestChannel := make(chan int, totalInserts)
+	userDataChannel := make(chan user.User, totalInserts)
+	csvRowChannel := make(chan []string, totalInserts)
 
-	for i := 0; totalInsertedRecords < totalInserts; i++ {
-		var user user.User
+	//starting 70 number of workers to execute getUserData. Initially it will be blocked
+	// because it will not receive any jobs( throw requestChannel )
+	for w := 1; w <= 70; w++ {
+		go getUserData(requestChannel, userDataChannel)
+	}
+
+	//sending number of request to the requestChannel
+	for i := 0; i < totalInserts; i++ {
+		requestChannel <- i
+	}
+
+	//This will start 2 workers to do the writeUserData job.
+	for w := 1; w < 2; w++ {
+		go writeUserData(userDataChannel, csvRowChannel)
+	}
+
+	for u := 0; totalInsertedRecords < totalInserts; u++ {
+		requestChannel <- u
+		row := <-csvRowChannel
+		sliceToString := strings.Join(row, ",")
+		if strings.Contains(sliceToString, "Male") || strings.Contains(sliceToString, "Female") {
+			csvWrite.Write(row)
+			totalInsertedRecords++
+		}
+
+	}
+
+	defer close(requestChannel)
+	/* defer close(userDataChannel)
+	defer close(csvRowChannel) */
+	return totalInsertedRecords
+}
+
+func getUserData(requestChannel <-chan int, userDataChannel chan user.User) {
+	var user user.User
+	for range requestChannel {
 		resp, err := http.Get("https://random-data-api.com/api/users/random_user")
+		//time.Sleep(time.Second)
 		if err != nil {
 			zap.S().Error(err.Error())
 		}
 
 		json.NewDecoder(resp.Body).Decode(&user)
-		if user.Gender != "Male" && user.Gender != "Female" {
-			continue
-		}
+		userDataChannel <- user
+	}
+}
 
+func writeUserData(userDataChannel chan user.User, csvRowChannel chan<- []string) {
+	for user := range userDataChannel {
 		var row []string
 		row = append(row, strconv.Itoa(int(user.ID)))
 		row = append(row, user.UID)
@@ -195,10 +235,6 @@ func writeData(totalInserts, remainingInserts, insertionIndex int, csvFile *os.F
 		row = append(row, user.Subscription.Status)
 		row = append(row, user.Subscription.PaymentMethod)
 		row = append(row, user.Subscription.Term)
-		csvWrite.Write(row)
-		totalInsertedRecords++
+		csvRowChannel <- row
 	}
-
-	fmt.Println("totalInsertedRecords: ", totalInsertedRecords)
-	return totalInsertedRecords
 }
